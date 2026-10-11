@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tiến Độ Giảng Dạy & Lịch Trình</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen pb-20">
+
+  <!-- Header -->
+  <header class="bg-indigo-600 text-white p-4 sticky top-0 z-30 shadow-md">
+    <div class="max-w-md mx-auto flex justify-between items-center">
+      <div>
+        <span class="text-[11px] uppercase tracking-wider text-indigo-200">Sổ tay giảng dạy</span>
+        <h1 class="text-lg font-bold">Tiến Độ & Lịch Trình</h1>
+      </div>
+      <button onclick="fetchData()" id="btnRefresh" class="p-2 bg-indigo-500 rounded-full hover:bg-indigo-400 active:scale-95 transition" title="Làm mới">
+        <i class="fa-solid fa-rotate-right"></i>
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-md mx-auto p-4 space-y-4">
+    <!-- Thông báo -->
+    <div id="toast" class="hidden py-2 px-3 text-xs rounded-lg text-center font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
+      Đang cập nhật lên Google Sheets...
+    </div>
+
+    <!-- Thống kê tổng số tiết -->
+    <div class="grid grid-cols-3 gap-2">
+      <div class="bg-white p-3 rounded-xl shadow-sm border-l-4 border-indigo-500 text-center">
+        <div class="text-[11px] text-slate-400 font-medium">Tổng số môn</div>
+        <div id="statTongMon" class="text-base font-bold text-slate-700">0</div>
+      </div>
+      <div class="bg-white p-3 rounded-xl shadow-sm border-l-4 border-emerald-500 text-center">
+        <div class="text-[11px] text-slate-400 font-medium">Đã dạy</div>
+        <div id="statDaDay" class="text-base font-bold text-emerald-600">0 tiết</div>
+      </div>
+      <div class="bg-white p-3 rounded-xl shadow-sm border-l-4 border-amber-500 text-center">
+        <div class="text-[11px] text-slate-400 font-medium">Còn lại</div>
+        <div id="statConLai" class="text-base font-bold text-amber-600">0 tiết</div>
+      </div>
+    </div>
+
+    <!-- Danh sách môn học -->
+    <div id="courseContainer" class="space-y-4">
+      <div class="text-center py-12 text-slate-400">
+        <i class="fa-solid fa-spinner fa-spin text-2xl text-indigo-600"></i>
+        <p class="mt-2 text-sm">Đang nạp dữ liệu từ Google Sheets...</p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const API_URL = "https://script.google.com/macros/s/AKfycbyux8WjJVeOps9IdIGHt1Yz4lWa9THXfK2fFn--apWEl0d9rcgEofmsYdDqp7evsQxl/exec";
+
+    let courseList = [];
+
+    // Hàm nhận dữ liệu qua JSONP
+    window.handleApiResponse = function(data) {
+      const container = document.getElementById("courseContainer");
+      if (Array.isArray(data)) {
+        courseList = data.filter(item => item && item.maMon && item.maMon.toString().trim() !== "");
+        render();
+      } else {
+        container.innerHTML = `<div class="bg-white p-4 rounded-xl text-center text-rose-500 text-sm">Lỗi dữ liệu Google Sheets trả về.</div>`;
+      }
+      document.getElementById("btnRefresh").querySelector("i").classList.remove("fa-spin");
+    };
+
+    function fetchData() {
+      const refreshBtn = document.getElementById("btnRefresh");
+      refreshBtn.querySelector("i").classList.add("fa-spin");
+
+      // Xóa thẻ script cũ nếu có
+      const oldScript = document.getElementById("jsonp-script");
+      if (oldScript) oldScript.remove();
+
+      // Tạo thẻ script gọi JSONP - Bỏ qua hoàn toàn rào cản CORS khi mở dạng file:///
+      const script = document.createElement("script");
+      script.id = "jsonp-script";
+      script.src = API_URL + "?callback=handleApiResponse&_t=" + new Date().getTime();
+      script.onerror = function() {
+        document.getElementById("courseContainer").innerHTML = `
+          <div class="bg-white p-4 rounded-xl text-center text-rose-500 text-sm shadow-sm">
+            <i class="fa-solid fa-triangle-exclamation text-xl mb-1"></i>
+            <p>Không thể kết nối! Hãy chắc chắn bạn đã cập nhật phiên bản mới trên Apps Script.</p>
+          </div>`;
+        refreshBtn.querySelector("i").classList.remove("fa-spin");
+      };
+      document.body.appendChild(script);
+    }
+
+    function render() {
+      const container = document.getElementById("courseContainer");
+      container.innerHTML = "";
+
+      let sumMon = courseList.length;
+      let sumDaDay = 0;
+      let sumConLai = 0;
+
+      if (sumMon === 0) {
+        container.innerHTML = `<div class="text-center py-8 text-slate-400 text-sm bg-white rounded-xl">Không tìm thấy môn học nào trong bảng tính.</div>`;
+        return;
+      }
+
+      courseList.forEach((mon) => {
+        sumDaDay += (Number(mon.tongDaDay) || 0);
+        sumConLai += (Number(mon.tongConLai) || 0);
+
+        const card = document.createElement("div");
+        card.className = "bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-3.5";
+
+        let timelineHTML = "";
+        const lichTrinh = Array.isArray(mon.lichTrinh) ? mon.lichTrinh : [];
+
+        lichTrinh.forEach(b => {
+          const isDone = String(b.trangThai || "").trim().toLowerCase() === "đã dạy";
+          const loai = String(b.loaiTiet || "Lý thuyết");
+          
+          let badgeColor = "bg-blue-100 text-blue-700";
+          if (loai.toLowerCase().includes("thực hành")) {
+            badgeColor = "bg-amber-100 text-amber-700";
+          } else if (loai.toLowerCase().includes("kiểm tra")) {
+            badgeColor = "bg-rose-100 text-rose-700";
+          }
+
+          timelineHTML += `
+            <div class="flex items-start space-x-3 p-2.5 rounded-xl border ${isDone ? 'bg-slate-50 border-slate-100' : 'bg-white border-slate-200'}">
+              <button onclick="toggleBuoi(${b.rowIndex}, '${isDone ? 'Chưa dạy' : 'Đã dạy'}')" 
+                class="mt-0.5 w-6 h-6 rounded-full flex items-center justify-center shrink-0 border transition active:scale-90 ${isDone ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 text-transparent hover:border-slate-400'}">
+                <i class="fa-solid fa-check text-[11px] ${isDone ? 'block' : 'hidden'}"></i>
+              </button>
+
+              <div class="flex-1 text-xs">
+                <div class="flex justify-between items-center">
+                  <span class="font-bold text-slate-700">Buổi ${b.buoi || 1} • <span class="text-indigo-600">${b.ngayDuKien || 'Chưa xếp'}</span></span>
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${badgeColor}">
+                    ${loai} (${b.soTiet || 0}t)
+                  </span>
+                </div>
+                <div class="text-slate-600 mt-1 font-medium ${isDone ? 'line-through text-slate-400' : ''}">${b.baiDay || ''}</div>
+                ${b.ghiChu ? `<div class="text-[11px] text-slate-400 italic mt-0.5"><i class="fa-regular fa-bookmark mr-1"></i>${b.ghiChu}</div>` : ''}
+              </div>
+            </div>
+          `;
+        });
+
+        card.innerHTML = `
+          <div class="flex justify-between items-start">
+            <div>
+              <div class="flex space-x-1.5 items-center">
+                <span class="text-[11px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded">${mon.hocKy ? 'Kỳ ' + mon.hocKy : 'Học kỳ'}</span>
+                <span class="text-[11px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded">${mon.lop || ''}</span>
+              </div>
+              <h2 class="text-base font-bold text-slate-800 mt-1.5 leading-snug">${mon.maMon} - ${mon.tenMon}</h2>
+            </div>
+            <span class="text-xs font-bold px-2.5 py-1 rounded-full shrink-0 ${mon.tongConLai === 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">
+              ${mon.tongConLai === 0 ? 'Xong' : 'Còn ' + (mon.tongConLai || 0) + 't'}
+            </span>
+          </div>
+
+          <!-- Phân phối giờ -->
+          <div class="grid grid-cols-3 gap-2 text-center text-xs">
+            <div class="bg-blue-50/70 p-2 rounded-xl border border-blue-100">
+              <span class="text-[10px] text-blue-600 font-semibold block">Lý thuyết</span>
+              <div class="font-bold text-blue-800 mt-0.5">${mon.daDayLT || 0} / ${mon.tietLT || 0}t</div>
+            </div>
+            <div class="bg-amber-50/70 p-2 rounded-xl border border-amber-100">
+              <span class="text-[10px] text-amber-600 font-semibold block">Thực hành</span>
+              <div class="font-bold text-amber-800 mt-0.5">${mon.daDayTH || 0} / ${mon.tietTH || 0}t</div>
+            </div>
+            <div class="bg-rose-50/70 p-2 rounded-xl border border-rose-100">
+              <span class="text-[10px] text-rose-600 font-semibold block">Kiểm tra</span>
+              <div class="font-bold text-rose-800 mt-0.5">${mon.daDayKT || 0} / ${mon.tietKT || 0}t</div>
+            </div>
+          </div>
+
+          <!-- Tiến độ -->
+          <div class="space-y-1">
+            <div class="flex justify-between text-xs font-semibold text-slate-500">
+              <span>Tổng tiến độ: <b>${mon.tongDaDay || 0}</b> / ${mon.tongTiet || 0} tiết</span>
+              <span class="text-indigo-600 font-bold">${mon.phanTram || 0}%</span>
+            </div>
+            <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+              <div class="bg-indigo-600 h-2.5 rounded-full transition-all duration-500" style="width: ${mon.phanTram || 0}%"></div>
+            </div>
+          </div>
+
+          <!-- Lịch trình -->
+          <div class="pt-2 border-t border-slate-100 space-y-2">
+            <div class="flex justify-between items-center text-[11px] text-slate-400 font-bold uppercase tracking-wider">
+              <span>Lịch trình các buổi:</span>
+              <span class="text-slate-500 font-normal capitalize">${lichTrinh.length} buổi</span>
+            </div>
+            <div class="space-y-1.5">
+              ${timelineHTML || '<div class="text-xs text-slate-400 italic">Chưa có lịch trình buổi dạy.</div>'}
+            </div>
+          </div>
+        `;
+
+        container.appendChild(card);
+      });
+
+      document.getElementById("statTongMon").innerText = sumMon;
+      document.getElementById("statDaDay").innerText = sumDaDay + " tiết";
+      document.getElementById("statConLai").innerText = sumConLai + " tiết";
+    }
+
+    async function toggleBuoi(rowIndex, newStatus) {
+      showToast("Đang đồng bộ với Google Sheets...");
+      try {
+        await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ rowIndex: rowIndex, trangThaiMoi: newStatus })
+        });
+        showToast("Đã lưu thành công!");
+        fetchData();
+      } catch (e) {
+        showToast("Lỗi kết nối, vui lòng thử lại!");
+      }
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById("toast");
+      t.innerText = msg;
+      t.classList.remove("hidden");
+      setTimeout(() => t.classList.add("hidden"), 2200);
+    }
+
+    // Tải dữ liệu ban đầu
+    fetchData();
+  </script>
+</body>
+</html>
